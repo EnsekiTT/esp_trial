@@ -11,7 +11,6 @@
 void app_main()
 {
   printf("LED chika chika!\n");
-  tcpip_adapter_init();
   gpio_set_direction(GPIO_NUM_4, GPIO_MODE_OUTPUT);
   int level = 0;
   while (true) {
