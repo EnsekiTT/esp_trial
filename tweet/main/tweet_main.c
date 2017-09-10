@@ -25,21 +25,17 @@
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
 
-static const char *TAG = "WiFi_Test";
+static const char *TAG = "Tweet_Test";
 #define DEFAULT_SSID CONFIG_WIFI_SSID
 #define DEFAULT_PWD CONFIG_WIFI_PASSWORD
+#define DEFAULT_TOKEN CONFIG_TWEET_TOKEN
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 
-#define WEB_SERVER "ensekitt.hatenablog.com"
+#define WEB_SERVER "stewgate-u.appspot.com"
 #define WEB_PORT 80
-#define WEB_URL "http://ensekitt.hatenablog.com/"
-
-static const char *REQUEST = "GET " WEB_URL " HTTP/1.0\r\n"
-    "Host: "WEB_SERVER"\r\n"
-    "User-Agent: esp-idf/1.0 esp32\r\n"
-    "\r\n";
+#define WEB_URL "/api/post/"
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -70,75 +66,89 @@ static void http_get_task(void *pvParameters)
         .ai_socktype = SOCK_STREAM,
     };
     struct addrinfo *res;
-    struct in_addr *addr;
     int s, r;
+    int count = 0;
     char recv_buf[64];
 
+    const char *head = "POST " WEB_URL " HTTP/1.1\r\n";
+    const char *host = "Host: "WEB_SERVER"\r\n";
+    const char *user_agent = "User-Agent: esp-idf/1.0 esp32\r\n";
+    const char *accept = "Accept: */*\r\n";
+    const char *content_type = "Content-Type: application/x-www-form-urlencoded\r\n";
+    char content_length[100];
+    char data[500];
+
     while(1) {
-        //接続済BITの確認
-        xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT,
-                            false, true, portMAX_DELAY);
-        ESP_LOGI(TAG, "Connected to AP");
+      count++;
+      //接続済BITの確認
+      xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT,
+                          false, true, portMAX_DELAY);
+      ESP_LOGI(TAG, "Connected to AP");
 
-        int err = getaddrinfo(WEB_SERVER, "80", &hints, &res);
+      getaddrinfo(WEB_SERVER, "80", &hints, &res);
 
-        if(err != 0 || res == NULL) {
-            ESP_LOGE(TAG, "DNS lookup failed err=%d res=%p", err, res);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-
-        //接続先IPの確認
-        addr = &((struct sockaddr_in *)res->ai_addr)->sin_addr;
-        ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", inet_ntoa(*addr));
-
-        //ソケット作成
-        s = socket(res->ai_family, res->ai_socktype, 0);
-        if(s < 0) {
-            ESP_LOGE(TAG, "... Failed to allocate socket.");
-            freeaddrinfo(res);
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... allocated socket\r\n");
-
-        //サーバへ接続
-        if(connect(s, res->ai_addr, res->ai_addrlen) != 0) {
-            ESP_LOGE(TAG, "... socket connect failed errno=%d", errno);
-            close(s);
-            freeaddrinfo(res);
-            vTaskDelay(4000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... connected");
-        freeaddrinfo(res);
-
-        //リクエスト実行
-        if (write(s, REQUEST, strlen(REQUEST)) < 0) {
-            ESP_LOGE(TAG, "... socket send failed");
-            close(s);
-            vTaskDelay(4000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        ESP_LOGI(TAG, "... socket send success");
-
-        //レスポンスの表示
-        do {
-            bzero(recv_buf, sizeof(recv_buf));
-            r = read(s, recv_buf, sizeof(recv_buf)-1);
-            for(int i = 0; i < r; i++) {
-                putchar(recv_buf[i]);
-            }
-        } while(r > 0);
-
-        ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d\r\n", r, errno);
-        close(s);
-        ESP_LOGI(TAG, "Success!");
-        for(int countdown = 10; countdown >= 0; countdown--) {
-          ESP_LOGI(TAG, "%d... ", countdown);
+      //ソケット作成
+      s = socket(res->ai_family, res->ai_socktype, 0);
+      if(s < 0) {
+          ESP_LOGE(TAG, "... Failed to allocate socket.");
+          freeaddrinfo(res);
           vTaskDelay(1000 / portTICK_PERIOD_MS);
+          continue;
+      }
+      ESP_LOGI(TAG, "... allocated socket\r\n");
+
+      //サーバへ接続
+      if(connect(s, res->ai_addr, res->ai_addrlen) != 0) {
+          ESP_LOGE(TAG, "... socket connect failed errno=%d", errno);
+          close(s);
+          freeaddrinfo(res);
+          vTaskDelay(4000 / portTICK_PERIOD_MS);
+          continue;
+      }
+      ESP_LOGI(TAG, "... connected");
+      freeaddrinfo(res);
+
+      //リクエスト実行
+      sprintf(data, "_t=%s&msg=%s", DEFAULT_TOKEN, "ここにツイートを書く");
+      sprintf(content_length, "Content-Length: %d\r\n\r\n", strlen(data));
+
+      //エラー処理やめてます
+      write(s, head, strlen(head));
+      write(s, host, strlen(host));
+      write(s, user_agent, strlen(user_agent));
+      write(s, accept, strlen(accept));
+      write(s, content_type, strlen(content_type));
+      write(s, content_length, strlen(content_length));
+      write(s, data, strlen(data));
+      //送った物を確認
+      printf("%s", head);
+      printf("%s", host);
+      printf("%s", user_agent);
+      printf("%s", accept);
+      printf("%s", content_type);
+      printf("%s", content_length);
+      printf("%s\n", data);
+
+      ESP_LOGI(TAG, "... socket send success");
+
+      //レスポンスの表示
+      do{
+        bzero(recv_buf, sizeof(recv_buf));
+        r = read(s, recv_buf, sizeof(recv_buf)-1);
+        printf("%d\r\n",r);
+        for(int i = 0; i < r; i++) {
+            putchar(recv_buf[i]);
         }
-        ESP_LOGI(TAG, "Starting again!");
+      }while(r > 0);
+
+      ESP_LOGI(TAG, "... done reading from socket. Last read return=%d errno=%d\r\n", r, errno);
+      close(s);
+      ESP_LOGI(TAG, "Success!");
+      for(int countdown = 10; countdown >= 0; countdown--) {
+        ESP_LOGI(TAG, "%d... ", countdown);
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+      }
+      ESP_LOGI(TAG, "Starting again!");
     }
 }
 
@@ -178,17 +188,4 @@ void app_main()
   //Webへアクセスタスクの実行
   xTaskHandle xHandle;
   xTaskCreate(&http_get_task, "http_get_task", 4096, NULL, 5, &xHandle);
-  vTaskDelay(30000 / portTICK_PERIOD_MS);
-
-  //アクセスタスクの削除
-  vTaskDelete( xHandle );
-
-  //接続解除
-  ESP_LOGI(TAG, "DISCONNECT");
-  ESP_ERROR_CHECK(esp_wifi_disconnect());
-  vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-  //WiFiドライバの停止
-  ESP_LOGI(TAG, "STOP");
-  ESP_ERROR_CHECK(esp_wifi_stop());
 }
